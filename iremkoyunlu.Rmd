@@ -1,0 +1,476 @@
+---
+title: "Zaman Serileri"
+author: "Irem Koyunlu"
+date: "23 04 2021"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# BOLUM 7
+## Üstel Düzleştirme (Exponential Smoothing)##
+## 7.1 Basit Üstel Düzleştirme##
+Trend ve mevsimsellik yok.Gözlemlere ağırlık veriliyor.Son gözlemlere daha fazla olacak şekilde.Naive ve ortalama yönteminin arasındadır.Bize düz tahminler verir.
+Naive=Sadece sondaki gözlemi hesaba katıyor. 
+Ortalama = Gözlemlerin ortalamasını alır.
+alpha = 1 olunca naivedir. Alpha 0 ile 1 arasındadır.Alpha ne kadar büyükse son dönem gözlemlere o kadar ağırlık verilir.
+```{r, message=FALSE}
+library(fpp2)
+oildata <- window(oil, start=1996)
+autoplot(oildata) +
+  ylab("Oil (millions of tonnes)") + xlab("Year")
+```
+Çok net olmasa da trend var gözüküyor.
+## Ağırlıklandırılmış Ortalama Formu (Weighted average form)##
+ Y1'i tahmin etmek için l0 gerekmektedir.l0 başlangıç parametresidir.Var olanın tahmini için fittedvalue yaparız.Var olmayanlar için forecast yaparız.
+## Bileşen formu (Component Form)##
+Naivede olduğu gibi düz tahminler veriyor.Forecast değerleri düz bir çizgi üzerinde çıkıyor.En son bulunan lt değeri neyse ordan sonraki tüm forecastler bu lt değerine eşittir.
+## Flat forecasts##
+h kaç adımlık olursa olsun tüm tahmin değerlerim lt'ye eşit olacaktır.
+## Optimizasyon##
+Zaman serisindeki hata kareler toplamını ve ortalamasını minimum kılan lambda ve l0 değerleri optimizasyon ile belirlenir.Bunu train sette yapar.
+## Örnek: Oil Production##
+```{r}
+fc <- ses(oildata, h=5)
+summary(fc)
+accuracy(fc)
+```
+Train set RMSE yerine crossvalidation ile yapma sebebi: train set hataları modelin train seti ne kadar iyi temsil etmeyi gösterir.Crossvalidation ise modelin predictionperformansı hakkında bilgi verir.Zaman serisindeki amaç train seti iyi modellemekten çok iyi tahminler veren model kurmak olduğu için crossvalidation üzeirnden çalışmak daha doğrudur.AIC BIC train setteki uyumu verir.
+```{r}
+autoplot(fc) +
+  autolayer(fitted(fc), series="Fitted") +
+  ylab("Oil (millions of tonnes)") + xlab("Year")
+```
+Forecastlar sabit çünkü bir önceki lt değerine eşit.
+## 7.2 Trend Metodları ##
+## Holt’un doğrusal trend yöntemi##
+Driftli naive benzemektedir.(h.eğim kullanılıyor)Dümdüz yukarıya çıkan eğim var . h'a göre katlanıyor.
+Beta çok büyük ise eğim çok yüksek olur . Bu da tahmin performansını düşürür. Bu nedenle dampedli yönteme geçeriz.Natural kubik spline e benziyor.
+## Sönümlü (Damped) trend methodları##
+Holt kadar dik gitmiyor .Phi parametresi eklenir.Phi=1 ise damped holtun doğrusal yöntemine döner.Phi=True ise otomatik alıyor.Phi h arttıkça trendin etkinliğini azaltır.Kubik spline e benziyor.
+## Örnek: Asya'da Koyun##
+```{r}
+autoplot(livestock) +
+  xlab("Year") + ylab("Livestock, sheep in Asia (millions)")
+```
+Veride trend olduğu gözükmektedir.
+ses , holt ve dampedli holt için hataları kullanarak crossvalidation ile MSE ve MAE değerleri üzerinden bu üç yöntemi kıyaslayalım.
+```{r}
+e1 <- tsCV(livestock, ses, h=1)
+e2 <- tsCV(livestock, holt, h=1)
+e3 <- tsCV(livestock, holt, damped=TRUE, h=1)
+# Compare MSE:
+mean(e1^2, na.rm=TRUE)
+mean(e2^2, na.rm=TRUE)
+mean(e3^2, na.rm=TRUE)
+```
+Bu veri için MSE değeri en düşük(en iyi) olan dampet edilmiş holt yöntemi uygundur.
+```{r}
+# Compare MAE:
+mean(abs(e1), na.rm=TRUE)
+mean(abs(e2), na.rm=TRUE)
+mean(abs(e3), na.rm=TRUE)
+```
+Bu veri için MAE değeri en düşük(en iyi) olan dampet edilmiş holt yöntemi uygundur.
+```{r}
+fc <- holt(livestock, damped=TRUE)
+fc$model # Damped edilmiş holtun yumuşatma parametre tahminlerini verir.
+```
+Damped edilmiş holt methodun grafiği.
+```{r}
+autoplot(fc) +
+  xlab("Year") + ylab("x")
+```
+## 7.3 Holt-Winters’ın mevsimsel yöntemi##
+Hem trend hem de mevsimsellik var.
+## Holt-Winters’ın toplamsal yöntemi##
+m= frakansı gösterir.Mevsimsel veride üç aylık veriler için m = 4 
+k=((h-1)/m) knın tam sayı kısmı kullanılır.Tahminlerin verinin son yılından gelmesini sağlar.
+Çok fazla parametre bulundurmaktadır.Gama parametresi , Çeyreklik veri için S0,S-1,S-2,S-3 başlangıç parametrelerini kestirmemiz lazım.Gama parametresinin 0'a çok yakın çıkması trendi olmayan yani büyük bir artış göstermeyen mevsimselliği gösterir.1' yakın olması da çok büyük artışlar gösterir.
+## Holt-Winters’ın çarpımsal yöntemi##
+Değişken varyanslılık varsa çarpımsal yöntem kullanılır.Verimdeki mevsimsel bileşenin hareketi git gide artış veya azalış gösteriyorsa , hızlı büyüyen ve azalan.Beta*'nın 0'a yakın olması trendin sabitlendiğini gösterir.Train sette bt değerleri her adımda değişiyor bunu engellemek için damped yöntemi kullanılır.
+## 7.5 Üstel Düzleştirme için Innovations state space modelleri##
+ Tek farkı artık hata terimlerinin olmasıdır.Maksimum like layklut fonksiyonunu max edecek şekilde parametre tahminleri yapılır.
+ ETS(Hata,Trend,Mevsimsellik)
+## 7.6 Tahmin ve model seçimi##
+## Örnek: Avustralya’da uluslararası turist ziyaretçi geceleri##
+```{r}
+aust <- window(austourists, start=2005)
+fit <- ets(aust)
+summary(fit)
+```
+AIC BIC değerleri train set üzerinden hesaplanmıştır.
+```{r}
+autoplot(fit) #componentlerin grafiklerini verir.İlki orjinal veri.İkinci trend dördüncü mevsimsel
+```
+
+```{r}
+cbind("Residuals" = residuals(fit), #çarpımsal hatayı verir.
+"Forecast errors"= residuals(fit,type="response")) %>%
+autoplot(facet=TRUE) + xlab("Year") + ylab("")
+#type=innovation çarpımsal hatayı verir.
+```
+## 7.7 Forecasting with ETS models##
+ETS modeli forecastları vermiyor.Forecastlar için hata terimi E=0 olarak alınır.Eher adımda sıfırlanarak tahmin modelleri elde edilir.
+```{r}
+autoplot(forecast(fit,h=8)) +
+ylab("x")
+```
+## BÖLÜM 7- UYGULAMA(SES-HOLT-HOLT DAMPED)##
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(fpp2) 
+library(lubridate)
+library(gridExtra)
+```
+
+```{r message=FALSE, warning=FALSE}
+autoplot(goog200)
+goog200<-ts(goog200,start=decimal_date(as.Date("2013-02-25")), frequency = 365)
+```
+Basit üstel düzleştirme uygulamak için durağan(trend,mevsimsellik yok) bir veri olması gerekir.
+```{r message=FALSE, warning=FALSE}
+goog.train <- window(goog200, end = c(2013,235))
+goog.test <- window(goog200, start = c(2013,236))
+```
+
+```{r  message=FALSE, warning=FALSE}
+ses.goog <- ses(goog.train, alpha = .2,PI=FALSE, h = 20)
+autoplot(goog200)+
+autolayer(ses.goog)
+```
+20 tahmin için basit üstel düzleştirme düz çizgi olarak çıkmıştır.Düz çizgi şeklinde olması gerekir.
+```{r message=FALSE, warning=FALSE}
+goog.dif <- diff(goog200) #farklar serinini elde etmek
+autoplot(goog.dif)
+goog.dif.train<-window(goog.dif, end = c(2013,235))
+goog.dif.test <- window(goog.dif, start = c(2013,236))  
+```
+Farklar serisinde trend ve mevsimsellik olmadığından basit üstel düzleştirme ses kullanılır.
+```{r,message=FALSE,warning=FALSE}
+alpha <- seq(.0001, .99, by = .001)
+RMSE <- NA
+for(i in seq_along(alpha)) {
+  fit <- ses(goog.dif.train, alpha=alpha[i], h = 20)
+  RMSE[i] <- accuracy(fit)[2]
+}
+alpha.fit <- data_frame(alpha, RMSE)
+alpha.min <- filter(alpha.fit, RMSE == min(RMSE))
+
+ggplot(alpha.fit, aes(alpha, RMSE)) +
+  geom_line() +
+  geom_point(data = alpha.min, aes(alpha, RMSE), size = 2, color = "blue")
+alpha.fit
+alpha.min
+```
+## CROSVALİDATİON ERRORLAR İLE RMSE UZERİNDEN ALPHA HESAPLAMA##
+```{r,message=FALSE,warning=FALSE}
+alpha <- seq(.01, .99, by = .01)
+CVRMSE <- NA
+for(i in seq_along(alpha)) {
+  fit <- ses(goog.dif.train, alpha=alpha[i], h = 20)
+  e <- tsCV(goog.dif.train,ses, alpha=alpha[i], h = 1 )
+  CVRMSE[i] <- mean(e^2,na.rm=TRUE)
+}
+alpha.fit <- data_frame(alpha, CVRMSE)
+alpha.min <- filter(alpha.fit, CVRMSE == min(CVRMSE))
+ggplot(alpha.fit, aes(alpha, CVRMSE)) +
+  geom_line() +
+  geom_point(data = alpha.min, aes(alpha, CVRMSE), size = 2, color = "blue")
+alpha.fit
+alpha.min
+```
+## CROSVALİDATİON ERRORLAR İLE MAE UZERİNDEN ALPHA HESAPLAMA##
+```{r,message=FALSE,warning=FALSE}
+alpha <- seq(.01, .99, by = .01)
+CVMAE <- NA
+for(i in seq_along(alpha)) {
+  fit <- ses(goog.dif.train, alpha=alpha[i], h = 20)
+  e <- tsCV(goog.dif.train,ses, alpha=alpha[i], h = 1 )
+  CVMAE[i] <- mean(abs(e),na.rm=TRUE)
+}
+alpha.fit <- data_frame(alpha, CVMAE)
+alpha.min <- filter(alpha.fit, CVMAE == min(CVMAE))
+ggplot(alpha.fit, aes(alpha, CVMAE)) +
+  geom_line() +
+  geom_point(data = alpha.min, aes(alpha, CVMAE), size = 2, color = "blue")
+alpha.fit
+alpha.min
+```
+# SES 
+Burada alpha yı otomatik belirler. RMSE 'yi min yapacak şekilde.
+```{r  message=FALSE, warning=FALSE}
+ses.goog.dif.opt <- ses(goog.dif.train,PI=FALSE,h = 20)
+ses.goog.dif.opt$model
+autoplot(goog.dif)+
+autolayer(ses.goog.dif.opt)
+```
+Şimdi bu modelin performansını inceleyelim
+```{r  message=FALSE, warning=FALSE}
+# performance eval
+accuracy(ses.goog.dif.opt, goog.dif.test)
+```
+Train setteki RMSE test setinden büyükse aşırı öğrenme yoktur.Overfittinge düşmedik.
+Tüm bunları yapmak yerine Holt'un geliştirdiği exponential smoothing yöntemini kullanabiliriz.
+holt fark serisinin getirdiği düz tahminleri ekleye ekleye sabit eğimli bir tahmin oluşturur.
+# HOLT
+```{r  message=FALSE, warning=FALSE}
+holt.goog <- holt(goog.train,PI=FALSE, h = 20)
+autoplot(goog200)+
+autolayer(holt.goog)+autolayer(holt.goog$fitted)
+```
+Fena bir tahmin değil.Damped holt bu veri setine göre daha düz tahmin vereceği için normal holt yöntemi bu veri setine daha uygundur.
+```{r  message=FALSE, warning=FALSE}
+holt.goog$model
+```
+
+```{r  message=FALSE, warning=FALSE}
+accuracy(holt.goog, goog.test)
+```
+MAPE 1.87 düşük bir hata iyi bi tahmin.
+# HOLT DAMPED 
+```{r  message=FALSE, warning=FALSE}
+holt.goog.damped <- holt(goog.train,PI=FALSE,damped = TRUE, h = 20)
+autoplot(goog200)+
+autolayer(holt.goog.damped)+autolayer(holt.goog.damped$fitted)
+```
+SÖnük bir trend .Test setinin tahminlerini çok kötü etkiledi.
+```{r}
+holt.goog.damped$model
+```
+
+```{r}
+accuracy(holt.goog.damped,goog.test)
+```
+##Holt-Winters Seasonal Method##
+```{r}
+qcement #veri
+```
+
+```{r}
+autoplot(qcement)
+```
+
+```{r}
+qcement.train <- window(qcement, end = c(2012, 4))
+qcement.test <- window(qcement, start = c(2013, 1))
+```
+
+```{r}
+fit1 <- hw(qcement.train,seasonal="additive") #toplamsal holt winters
+fit2 <- hw(qcement.train,seasonal="multiplicative") #çarpımsal
+autoplot(qcement.train) +
+autolayer(fit1, series="HW additive forecasts", PI=FALSE) +
+autolayer(fit2, series="HW multiplicative forecasts",
+PI=FALSE) +
+xlab("Year") +
+ylab("a") +
+ggtitle("a") +
+guides(colour=guide_legend(title="Forecast"))
+```
+
+```{r}
+fit1$model
+```
+Şimdi bu modelin performansını inceleyelim
+```{r}
+accuracy(fit1,qcement.test)
+```
+
+```{r}
+fit2$model
+```
+
+```{r}
+accuracy(fit2,qcement.test)
+```
+
+```{r  message=FALSE, warning=FALSE}
+qcement %>%
+  stl(t.window=13, s.window="periodic", robust=TRUE) %>%
+  autoplot()
+```
+##Innovation State Space Models Uygulama##
+```{r}
+coronavirus_daily_data <- read.csv("C:/Users/CASPER/Desktop/zaman serisi vize/worldometer_coronavirus_daily_data.csv")
+```
+
+```{r,warning=FALSE,message=FALSE}
+library(dplyr)
+coronavirus_daily_data%>%filter(country=="Turkey")%>%select(date,daily_new_cases,daily_new_deaths)->coronavirus_Turkey
+coronavirus_Turkey<-coronavirus_Turkey[-c(1:27),] #28. satırdan başlattık.
+```
+
+```{r,warning=FALSE,message=FALSE}
+library(lubridate)
+library(fpp2)
+CasesTurkey<-ts(coronavirus_Turkey$daily_new_cases,start=decimal_date(as.Date('2020-03-13','%Y-%m-%d')),frequency = 365)
+autoplot(CasesTurkey)
+```
+İlk başta küçük bir dalga , daha sonra büyük bir dalga gözüküyor, şuan 3. dalgadayız. Mevsimsel değildir.Verinin sonuna doğru trend olduğundan additive kullanmak uygun olabilir.
+```{r}
+train<-window(CasesTurkey,end=decimal_date(as.Date('2021-03-25','%Y-%m-%d')))      
+test<-window(CasesTurkey,start=decimal_date(as.Date('2021-03-25','%Y-%m-%d')))
+```
+# ETS 
+```{r,warning=FALSE,error=FALSE}
+model<-ets(train)
+summary(model)
+```
+parametre tahminleri layklut like üzerinden belirleniyor.
+```{r}
+autoplot(CasesTurkey)+autolayer(fitted(model))+autolayer(forecast(model,PI=FALSE,h=5)) #tüm modelin üzerine( gerçek değerler) fittedları ve forecastleri çizdirdik.
+```
+Modelin train seti üzerindeki uyumu çok iyi gözüküyor.
+```{r}
+autoplot(test)+autolayer(forecast(model,PI=FALSE,h=5))# test setinin( gerçek değerler) üzerine forecastleri çizdirdik.
+```
+modelin test seti üzerindeki performansına bakalım ;
+```{r,message=FALSE,warning=FALSE}
+accuracy(ets(test, model = model))
+```
+Modeldeki MAPE değerimiz %3,41lik hata var iyi bir değer.
+```{r}
+cbind('Residuals' = residuals(model),
+      'Forecast errors' = residuals(model,type='response')) %>%
+  autoplot(facet=TRUE) + xlab("Year") + ylab("")
+```
+### HOLT'un yöntemi ile deneyelim ##
+```{r}
+modelholt<-holt(train)
+summary(modelholt)
+```
+
+```{r}
+autoplot(CasesTurkey)+autolayer(fitted(modelholt))+autolayer(forecast(modelholt,PI=FALSE,h=5))
+```
+# BÖLÜM 8 
+## ARIMA modelleri##
+## 8.1 Durağanlık ve farkalma##
+Durağanlık : Verideki değişkenlik zamana bağlı olmayan serilerdir, trendi ve mevsimselliği ( beyaz gürültü serisi) yok. Döngüsel seriler durağan değildir.
+## Fark Alma##
+Serinin farkı alınırsa durağan olma ihtimali vardır.
+# Ljung-Box
+H0: otokorelasyon yok.
+H1: otokorelasyon vardır.
+```{r,warning=FALSE,message=FALSE}
+library(fpp2)
+Box.test(diff(goog200), lag=10, type="Ljung-Box")
+```
+H0 0.05 den büyük olduğu için kabul yani  otokorelasyon yok.
+## Rastgele yürüyüş modeli##
+Fark serimiz durağansa kullanılır. c eşit değil 0 ise Driftli naive ye benzer. c=0 ise naiv yöntemine benzer. 
+## İkinci dereceden fark alma ##
+Mevsimsel naive ye benzer. Seri 1 fark alınınca durağan olmazsa bir fark daha alınır.
+## Mevsimsel fark alma##
+Trend yok , mevsimsellik var. 
+```{r}
+cbind("Billion kWh" = usmelec,
+      "Logs" = log(usmelec),
+      "Seasonally\n differenced logs" =
+        diff(log(usmelec),12), # mevsimsel fark almak
+      "Doubly\n differenced logs" =
+        diff(diff(log(usmelec),12),1)) %>% # ilk fark birinci dereceden fark almak
+  autoplot(facets=TRUE) +
+    xlab("Year") + ylab("") +
+    ggtitle("Monthly US net electricity generation")
+```
+1. değişken varyanslılık problemi var , mevsimselliğin boyutu git gide artıyor, Değişken varyanslılık problemini gidermek için log alınır.
+2. Değişken varyanslılık az da olsa giderilmiştir.
+3. Mevsimsel fark aldığımızda ortalama 0 etrafında random dağılmıyor 0 ın üstünde kalmış. Bir kez daha fark alınabilir.Durağan seri yapmaya çalışıyoruz.
+4. tekrar fark aldığımız halinde ortalamalar 0 ın etrafında random dağılıyor durağan bir seri oldu.
+## Birim kök testleri ##
+Serinin durağan olup olmadığını gösterir.
+H0: Durağan seri
+H1: Durağan değil
+```{r}
+library(urca)
+goog %>% ur.kpss() %>% summary()
+```
+Hesap değeri 2.5 pct den büyük H0 Red. Durağan değildir.
+```{r}
+goog %>% diff() %>% ur.kpss() %>% summary() # Fark alınmış seri
+```
+Fark alınmış serinin hesap değeri 2.5 pct den küçük H0 kabul. Durağandır.
+MEVSİMSELLİĞİN GÜCÜ Fs < 0.64 mevsimsel fark alınmaz.
+# Mevsimsel fark alıp almamak nsdiffs
+```{r}
+usmelec %>% log() %>% nsdiffs()
+```
+# Birinci derecen fark alıp almayacağımız ( ilk fark ) nsdiffs
+```{r}
+usmelec %>% log() %>% diff(lag=12) %>% ndiffs()
+```
+## 8.2 Geri vites gösterimi (Backshift notation)##
+Daha kolay ifade edebilmek için kullanılır. Byt zaman serisinin bir gecikmeye kaydırılması.
+## 8.3 Otoregresif modeller (AR) ## 
+Bir serinin kendi gecikmeleri ile açıklandığı regresyon. Durağan seriler üzerinde uygulanır.
+## 8.4 Moving average models (Hareketli Ortalama Modelleri) (MA) ##
+Bir serinin hataları ile açıklandığı regresyon .Durağan seriler üzerinde uygulanır.
+##8.5 Mevsimsel olmayan ARIMA modelleri##
+Arıma (p,d,q)
+p: AR modeli kaçıncı dereceden.
+d: Farkın derecesi.
+q: MA modelinin derecesi.
+Eğer seri durağan değil ise d 0 dan farklı olur.
+c:ortalamax( 1- AR1-AR2-...)
+## ÖRNEK:ABD tüketim harcamaları##
+```{r}
+autoplot(uschange[,"Consumption"]) + 
+xlab("") + ylab("")
+```
+## ACF ve PACF grafikleri##
+```{r}
+ggAcf(uschange[,"Consumption"])
+```
+
+```{r}
+ggPacf(uschange[,"Consumption"])
+```
+# Otomatik ARIMA modeli stepwise , approximation bunların false olması daha fazla model kullandığı anlamına gelir.
+```{r}
+fit3 <- auto.arima(uschange[,"Consumption"], seasonal=FALSE,
+stepwise=FALSE, approximation=FALSE)
+fit3
+```
+yt modelini ve c yi hesaplamayı unutma . 8. bölüm sayfa 13
+```{r}
+fit3 %>% forecast(h=10) %>% autoplot(include=80)
+```
+## 8.7 R’de ARIMA modellemesi##
+## Örnek: Mevsimsellikten arındırılmış elektrikli ekipman siparişleri##
+Mevsimselliği stl ayrışımı ile ayrıştıralım;
+```{r}
+elecequip %>% stl(s.window='periodic') %>% seasadj() -> eeadj
+autoplot(eeadj)
+```
+
+```{r}
+summary(ur.kpss(eeadj))
+```
+Hesap değeri 2.5 pct den büyük H0 red.Seri durağan değildir.Fark alınmalı
+Fark alalım;
+```{r}
+difeeadj<-diff(eeadj)
+ggtsdisplay(difeeadj,main="")# zaman serisi ve acf pacfyi birlikte verir.
+```
+arima (p,d,0) ve arima(0,d,q) modellerine uymaz. İlk 3 lag dikkate alınmıştır.
+```{r}
+fit <- Arima(eeadj, order=c(3,1,1))
+fit
+```
+
+```{r}
+checkresiduals(fit)
+```
+Hesap değeri 0.05 den büyük ho kabul yani otokorelasyon yok.(H0: otokorelasyon yok,H1: otokorelasyon vardır.)
+```{r}
+autoplot(forecast(fit))
+```
+
+```{r}
+fitt<-auto.arima(eeadj)
+fitt
+fitt2<-auto.arima(eeadj,stepwise = FALSE,approximation = FALSE)
+fitt2
+```
