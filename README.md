@@ -1,0 +1,18 @@
+# Time-Series-Analysis-SES-HOLT-HOLT-DAMPED-ETS-ARIMA
+CONTENTS : Ustel Duzlestirme (Exponential Smoothing) SES, 
+Agirliklandirilmis Ortalama Formu (Weighted average form), 
+Bilesen formu (Component Form), 
+Flat forecasts, 
+Optimizasyon, 
+Trend Metodlari, 
+Holt, 
+Damped Holt, 
+Holt-Winters’in mevsimsel yontemi, 
+Holt-Winters’in toplamsal yontemi, 
+Holt-Winters’in carpimsal yontemi, 
+Ustel Duzlestirme icin Innovations state space modelleri, 
+Forecasting with ETS models, 
+ETS, 
+ARIMA, 
+ACF ve PACF Grafikleri, 
+nsdiffs, ndiffs
